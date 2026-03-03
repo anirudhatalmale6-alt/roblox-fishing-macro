@@ -1,22 +1,24 @@
 ; ============================================================
-;  ROBLOX FISHING MINIGAME MACRO  v3.0  —  FULLY AUTOMATIC
+;  ROBLOX FISHING MINIGAME MACRO  v4.0  —  PRECISION UPDATE
 ; ============================================================
 ;
-;  Press F1 and walk away.  The macro will:
-;    1. Cast the rod (left-click)
-;    2. Wait for the minigame to start
-;    3. Auto-detect variant and click circles
-;    4. When the round ends, wait and recast
-;    5. Repeat forever until you press F1 again
+;  CHANGES IN v4:
+;    - Auto-excludes left menu & bottom toolbar from scan area
+;    - Blob confirmation: verifies a found pixel is part of a
+;      real circle (not a UI button or stray pixel) before clicking
+;    - Casts by clicking in the game center, not at cursor
+;    - Saturation scan is smarter: excludes brown/tan UI colors
+;    - Less aggressive: won't spam-click on false positives
 ;
-;  Works with ALL circle colors and ALL 3 variants.
+;  Press F1 and walk away.  The macro handles everything.
 ;
 ;  HOTKEYS:
-;    F1  = Start / Stop full-auto loop
+;    F1  = Start / Stop
 ;    F4  = Calibrate game area (click two corners)
-;    F6  = Color picker (debug tool)
-;    F7  = Decrease gap threshold (ring timing: more precise)
-;    F8  = Increase gap threshold (ring timing: more forgiving)
+;    F6  = Color picker (checks pixel under cursor)
+;    F7  = Decrease gap threshold (ring: more precise)
+;    F8  = Increase gap threshold (ring: more forgiving)
+;    F9  = Pause / Resume (keeps state, stops mouse movement)
 ;    F12 = Emergency exit
 ;
 ; ============================================================
@@ -35,17 +37,34 @@ SendMode Input
 ; ==========================
 
 global Running := false
+global Paused  := false
 
-; --- Game area (screen coordinates) ---
-; Recalibrate with F4 for your setup.
-global GX1 := 110
-global GY1 := 30
-global GX2 := 1810
-global GY2 := 640
+; --- Raw game area (set with F4) ---
+; This is the FULL area including menus.  The script auto-
+; shrinks it to exclude the left menu and bottom toolbar.
+global RawX1 := 110
+global RawY1 := 30
+global RawX2 := 1810
+global RawY2 := 640
 
-; --- Strategy A: colored circle palette ---
-; All known circle colors.  Add more if new ones appear.
-; Use F6 to check colors on your screen.
+; --- UI exclusion margins (pixels) ---
+; Shrink the scan area inward to skip UI elements.
+; Left margin: skips Challenges/Storage/Shop menu
+; Bottom margin: skips inventory toolbar
+; Top margin: skips difficulty text area
+; Adjust these if your UI is different.
+global MarginLeft   := 130
+global MarginRight  := 20
+global MarginTop    := 90
+global MarginBottom := 80
+
+; --- Effective scan area (computed from raw + margins) ---
+global GX1 := 0
+global GY1 := 0
+global GX2 := 0
+global GY2 := 0
+
+; --- Strategy A: circle color palette ---
 global CircleColors := []
 
 ; --- Strategy B: white inner circle (Variants 2 & 3) ---
@@ -53,67 +72,67 @@ global V23_White    := 0xD8D8D8
 global V23_WhiteVar := 45
 
 ; --- Ring gap threshold ---
-; How close the ring must be before clicking (pixels).
-; Adjust live with F7/F8.  Default 7 works across difficulties.
 global GapThresh := 7
-
-; Ring outline: pixel is "ring" if R,G,B all below this.
 global RingMinBrightness := 80
 
-; --- Saturation scan (fallback for unknown colors) ---
-; If no known color matches, grid-scan for any vivid pixel.
-; MinSaturation: how vivid a pixel must be (max-min of RGB).
-; MinBrightness: how bright the brightest channel must be.
-global SatScanStep      := 20    ; grid spacing in pixels
-global MinSaturation    := 90    ; color vividness threshold
-global MinBrightness    := 130   ; brightness threshold
-; Exclude water-blue pixels: skip if Blue is dominant by this margin
+; --- Blob confirmation ---
+; How many nearby pixels must also be colorful to confirm
+; that the found pixel is a real circle (not a stray pixel).
+; Checks 8 points around the found pixel at this distance.
+global BlobCheckDist  := 8    ; pixels from found point
+global BlobMinMatches := 4    ; out of 8 must match
+
+; --- Saturation scan (catches unlisted colors) ---
+global SatScanStep      := 22
+global MinSaturation    := 100   ; raised to reduce false hits
+global MinBrightness    := 130
 global WaterBlueMargin  := 50
+; Also skip brown/tan pixels (UI buttons):
+global BrownMaxSat      := 70    ; low-sat warm colors = UI
 
 ; --- Automation timing ---
-global CastClickDelay   := 300   ; ms to hold before releasing cast
-global WaitForGameMax   := 8000  ; ms to wait for minigame after cast
-global RoundEndTimeout  := 2500  ; ms with no circles = round over
-global RecastDelay      := 1500  ; ms pause between rounds
+global CastClickDelay   := 300
+global WaitForGameMax   := 8000
+global RoundEndTimeout  := 2500
+global RecastDelay      := 1500
 
 ; --- Humanization ---
 global HumanDelayMin    := 15
 global HumanDelayMax    := 55
 global ClickJitter      := 4
-global PostClickPause   := 170
+global PostClickPause   := 200   ; slightly longer to reduce spam
 
 ; ==========================
-;  INITIALIZE COLORS
+;  INITIALIZE
 ; ==========================
 InitColors() {
     CircleColors := []
-    ; Yellow
-    CircleColors.Push({c: 0xE8E800, v: 55})
-    ; Green
-    CircleColors.Push({c: 0x30D830, v: 55})
-    ; Orange
-    CircleColors.Push({c: 0xE89830, v: 55})
-    ; Pink / Magenta
-    CircleColors.Push({c: 0xE840A0, v: 55})
-    ; Purple
-    CircleColors.Push({c: 0x9040E0, v: 55})
-    ; Red
-    CircleColors.Push({c: 0xE83030, v: 55})
-    ; Light blue (tighter variation to avoid matching water)
-    CircleColors.Push({c: 0x4090F0, v: 35})
-    ; Deep blue
-    CircleColors.Push({c: 0x3050D0, v: 35})
-    ; Cyan / Teal circle (distinct from water by saturation)
-    CircleColors.Push({c: 0x30E8D0, v: 40})
+    CircleColors.Push({c: 0xE8E800, v: 50})   ; Yellow
+    CircleColors.Push({c: 0x30D830, v: 50})   ; Green
+    CircleColors.Push({c: 0xE89830, v: 50})   ; Orange
+    CircleColors.Push({c: 0xE840A0, v: 50})   ; Pink
+    CircleColors.Push({c: 0x9040E0, v: 50})   ; Purple
+    CircleColors.Push({c: 0xE83030, v: 50})   ; Red
+    CircleColors.Push({c: 0x4090F0, v: 30})   ; Light Blue (tight)
+    CircleColors.Push({c: 0x3050D0, v: 30})   ; Deep Blue (tight)
+    CircleColors.Push({c: 0x30E8D0, v: 35})   ; Cyan/Teal
 }
 InitColors()
+UpdateScanArea()
+
+UpdateScanArea() {
+    GX1 := RawX1 + MarginLeft
+    GY1 := RawY1 + MarginTop
+    GX2 := RawX2 - MarginRight
+    GY2 := RawY2 - MarginBottom
+}
 
 ; ==========================
 ;  INTERNAL STATE
 ; ==========================
-global MacroState     := "IDLE"   ; IDLE, CASTING, WAITING, PLAYING, COOLDOWN
+global MacroState     := "IDLE"
 global LastClickTick  := 0
-global LastFoundTick  := 0        ; last time we found a circle
+global LastFoundTick  := 0
 global StateStartTick := 0
 global DetectedMode   := ""
 
@@ -121,11 +140,12 @@ global DetectedMode   := ""
 ;  STATUS TOOLTIP
 ; ==========================
 ShowStatus() {
-    st := Running ? "RUNNING" : "STOPPED"
-    ToolTip, % "Fishing Macro [" st "]  Auto-Loop`n"
+    st := Running ? (Paused ? "PAUSED" : "RUNNING") : "STOPPED"
+    ToolTip, % "Fishing Macro [" st "]`n"
         . "State: " MacroState "  |  Mode: " DetectedMode "`n"
-        . "Gap: " GapThresh "px  |  Area: (" GX1 "," GY1 ")-(" GX2 "," GY2 ")`n"
-        . "F1=Start/Stop  F4=Calibrate  F7/F8=Gap  F12=Exit"
+        . "Gap: " GapThresh "px`n"
+        . "Scan: (" GX1 "," GY1 ")-(" GX2 "," GY2 ")`n"
+        . "F1=On/Off F4=Cal F7/8=Gap F9=Pause F12=Exit"
     SetTimer, HideTip, -4000
 }
 HideTip:
@@ -138,12 +158,13 @@ return
 
 F1::
     Running := !Running
+    Paused := false
     if (Running) {
         MacroState := "CASTING"
         StateStartTick := A_TickCount
         DetectedMode := ""
         ShowStatus()
-        SetTimer, AutoLoop, 10
+        SetTimer, AutoLoop, 15
     } else {
         MacroState := "IDLE"
         SetTimer, AutoLoop, Off
@@ -153,18 +174,22 @@ return
 
 F4::
     Running := false
+    Paused := false
     MacroState := "IDLE"
     SetTimer, AutoLoop, Off
-    ToolTip, Click the TOP-LEFT corner of the minigame UI...
+    ToolTip, Click the TOP-LEFT corner of the FULL game area...
     KeyWait, LButton, D
-    MouseGetPos, GX1, GY1
+    MouseGetPos, RawX1, RawY1
     KeyWait, LButton
     Sleep, 200
     ToolTip, Now click the BOTTOM-RIGHT corner...
     KeyWait, LButton, D
-    MouseGetPos, GX2, GY2
+    MouseGetPos, RawX2, RawY2
     KeyWait, LButton
-    ShowStatus()
+    UpdateScanArea()
+    ToolTip, % "Raw area: (" RawX1 "," RawY1 ")-(" RawX2 "," RawY2 ")`n"
+        . "Scan area (after margins): (" GX1 "," GY1 ")-(" GX2 "," GY2 ")"
+    SetTimer, HideTip, -5000
 return
 
 F6::
@@ -174,9 +199,11 @@ F6::
     r := (col >> 16) & 0xFF
     g := (col >> 8)  & 0xFF
     b := col & 0xFF
-    sat := Max(r, Max(g, b)) - Min(r, Min(g, b))
-    ToolTip, % "(" mx "," my "): " hex " R=" r " G=" g " B=" b " Sat=" sat
-    SetTimer, HideTip, -5000
+    maxC := Max(r, Max(g, b))
+    minC := Min(r, Min(g, b))
+    sat := maxC - minC
+    ToolTip, % "(" mx "," my "): " hex "`nR=" r " G=" g " B=" b " Sat=" sat
+    SetTimer, HideTip, -6000
 return
 
 F7::
@@ -191,6 +218,13 @@ F8::
     SetTimer, HideTip, -2000
 return
 
+F9::
+    if (Running) {
+        Paused := !Paused
+        ShowStatus()
+    }
+return
+
 F12::
     ExitApp
 return
@@ -198,13 +232,8 @@ return
 ; ==========================
 ;  MAIN AUTO-LOOP
 ; ==========================
-; State machine:
-;   CASTING  → click to cast rod
-;   WAITING  → scan for circles (minigame starting)
-;   PLAYING  → click circles as they appear
-;   COOLDOWN → round over, pause before recasting
 AutoLoop:
-    if (!Running)
+    if (!Running || Paused)
         return
 
     if (MacroState = "CASTING")
@@ -218,39 +247,39 @@ AutoLoop:
 return
 
 ; --------------------------------------------------
-;  STATE: CASTING — click to cast the rod
+;  CASTING — click in the CENTER of the game area
 ; --------------------------------------------------
 DoCasting() {
-    ; Add human-like delay before casting
     Random, d, 200, 500
     Sleep, d
-    Click
+
+    ; Click in the center of the raw game area (where the water is)
+    castX := (RawX1 + RawX2) // 2
+    castY := (RawY1 + RawY2) // 2
+    Random, ox, -10, 10
+    Random, oy, -10, 10
+    Click, % (castX + ox) . " " . (castY + oy)
     Sleep, CastClickDelay
 
-    ; Move to WAITING state
     MacroState := "WAITING"
     StateStartTick := A_TickCount
     DetectedMode := ""
-    ToolTip, % "Fishing Macro [RUNNING]`nCast! Waiting for minigame..."
+    ToolTip, % "Cast! Waiting for minigame..."
     SetTimer, HideTip, -3000
 }
 
 ; --------------------------------------------------
-;  STATE: WAITING — look for the minigame to appear
+;  WAITING — scan for circles to appear
 ; --------------------------------------------------
 DoWaiting() {
-    ; Check if we've been waiting too long (no minigame appeared)
     elapsed := A_TickCount - StateStartTick
     if (elapsed > WaitForGameMax) {
-        ; Timeout — try casting again
         MacroState := "CASTING"
         StateStartTick := A_TickCount
         return
     }
 
-    ; Try to find any circle
     if (TryFindAndClick()) {
-        ; Found something — minigame is active!
         MacroState := "PLAYING"
         LastFoundTick := A_TickCount
         StateStartTick := A_TickCount
@@ -259,38 +288,33 @@ DoWaiting() {
 }
 
 ; --------------------------------------------------
-;  STATE: PLAYING — actively clicking circles
+;  PLAYING — click circles
 ; --------------------------------------------------
 DoPlaying() {
-    ; Cooldown guard
     elapsed := A_TickCount - LastClickTick
     if (elapsed < PostClickPause)
         return
 
-    ; Try to find and click a circle
     if (TryFindAndClick()) {
         LastFoundTick := A_TickCount
     }
 
-    ; Check if round is over (no circles for a while)
     sinceLastFound := A_TickCount - LastFoundTick
     if (sinceLastFound > RoundEndTimeout) {
-        ; Round seems over
         MacroState := "COOLDOWN"
         StateStartTick := A_TickCount
-        ToolTip, % "Fishing Macro [RUNNING]`nRound over! Recasting soon..."
+        ToolTip, % "Round over! Recasting soon..."
         SetTimer, HideTip, -2000
     }
 }
 
 ; --------------------------------------------------
-;  STATE: COOLDOWN — pause before next cast
+;  COOLDOWN — pause before recasting
 ; --------------------------------------------------
 DoCooldown() {
     elapsed := A_TickCount - StateStartTick
     if (elapsed > RecastDelay) {
-        ; Add random extra wait for human-like behavior
-        Random, extra, 200, 800
+        Random, extra, 300, 900
         Sleep, extra
         MacroState := "CASTING"
         StateStartTick := A_TickCount
@@ -300,29 +324,28 @@ DoCooldown() {
 ; ==========================
 ;  CIRCLE DETECTION ENGINE
 ; ==========================
-; Tries all detection strategies.  Returns true if a circle
-; was found and clicked.
-
 TryFindAndClick() {
-    ; --- Strategy A: search for known circle colors ---
+    ; --- Strategy A: known colors + blob confirmation ---
     for i, entry in CircleColors {
         PixelSearch, fx, fy, GX1, GY1, GX2, GY2, entry.c, entry.v, Fast RGB
         if (ErrorLevel = 0) {
-            DetectedMode := "multi-circle"
-            HumanClick(fx, fy)
-            return true
+            ; CONFIRM it's a real circle, not a stray pixel or UI
+            if (ConfirmColorBlob(fx, fy, entry.c, entry.v)) {
+                DetectedMode := "multi-circle"
+                HumanClick(fx, fy)
+                return true
+            }
         }
     }
 
     ; --- Strategy A fallback: saturation grid scan ---
-    ; Catches ANY vivid color we didn't list above.
     if (SaturationScan(fx, fy)) {
         DetectedMode := "multi-circle (sat)"
         HumanClick(fx, fy)
         return true
     }
 
-    ; --- Strategy B: white circle + ring timing ---
+    ; --- Strategy B: ring timing ---
     if (TryRingTiming()) {
         return true
     }
@@ -331,11 +354,39 @@ TryFindAndClick() {
 }
 
 ; ==========================
+;  BLOB CONFIRMATION (Strategy A)
+; ==========================
+; Checks 8 points around the found pixel at BlobCheckDist.
+; At least BlobMinMatches must also be colorful (high sat)
+; to confirm this is a real circle and not noise/UI.
+ConfirmColorBlob(fx, fy, targetColor, variation) {
+    d := BlobCheckDist
+    offsets := [ {x: d, y: 0}, {x: -d, y: 0}, {x: 0, y: d}, {x: 0, y: -d}
+               , {x: d, y: d}, {x: -d, y: -d}, {x: d, y: -d}, {x: -d, y: d} ]
+    matches := 0
+
+    for i, o in offsets {
+        px := fx + o.x
+        py := fy + o.y
+        if (px < GX1 || px > GX2 || py < GY1 || py > GY2)
+            continue
+        PixelGetColor, col, px, py, RGB
+        r := (col >> 16) & 0xFF
+        g := (col >> 8)  & 0xFF
+        b := col & 0xFF
+        maxC := Max(r, Max(g, b))
+        minC := Min(r, Min(g, b))
+        sat  := maxC - minC
+        ; Neighbor must be vivid (part of a colored circle)
+        if (sat > 60 && maxC > 100)
+            matches++
+    }
+    return (matches >= BlobMinMatches)
+}
+
+; ==========================
 ;  SATURATION GRID SCAN
 ; ==========================
-; Scans the game area on a grid looking for any pixel with
-; high color saturation (vivid color = circle, not background).
-; Skips water-blue pixels.  Returns true if found.
 SaturationScan(ByRef outX, ByRef outY) {
     y := GY1
     while (y <= GY2) {
@@ -350,17 +401,27 @@ SaturationScan(ByRef outX, ByRef outY) {
             minC := Min(r, Min(g, b))
             sat  := maxC - minC
 
-            ; Must be vivid and reasonably bright
             if (sat > MinSaturation && maxC > MinBrightness) {
-                ; Skip water-blue: blue is dominant by a large margin
-                if (b > r + WaterBlueMargin && b > g + WaterBlueMargin) {
-                    ; Looks like water — skip
-                } else {
+                ; Skip water-blue (blue dominant by large margin)
+                if (b > r + WaterBlueMargin && b > g + WaterBlueMargin)
+                    goto SatNext
+
+                ; Skip brown/tan (warm, low-to-medium sat = UI buttons)
+                if (r > g && r > b && sat < BrownMaxSat)
+                    goto SatNext
+
+                ; Skip gray/desaturated
+                if (sat < 50)
+                    goto SatNext
+
+                ; Confirm it's a blob, not a stray pixel
+                if (ConfirmSatBlob(x, y)) {
                     outX := x
                     outY := y
                     return true
                 }
             }
+            SatNext:
             x += SatScanStep
         }
         y += SatScanStep
@@ -368,20 +429,39 @@ SaturationScan(ByRef outX, ByRef outY) {
     return false
 }
 
+; Confirm saturation blob: check 4 neighbors are also vivid
+ConfirmSatBlob(fx, fy) {
+    d := 6
+    offsets := [{x: d, y: 0}, {x: -d, y: 0}, {x: 0, y: d}, {x: 0, y: -d}]
+    matches := 0
+    for i, o in offsets {
+        px := fx + o.x
+        py := fy + o.y
+        if (px < GX1 || px > GX2 || py < GY1 || py > GY2)
+            continue
+        PixelGetColor, col, px, py, RGB
+        r := (col >> 16) & 0xFF
+        g := (col >> 8)  & 0xFF
+        b := col & 0xFF
+        maxC := Max(r, Max(g, b))
+        minC := Min(r, Min(g, b))
+        if (maxC - minC > 70)
+            matches++
+    }
+    return (matches >= 3)
+}
+
 ; ==========================
 ;  STRATEGY B — Ring timing
 ; ==========================
 TryRingTiming() {
-    ; Find white inner circle
     PixelSearch, cx, cy, GX1, GY1, GX2, GY2, V23_White, V23_WhiteVar, Fast RGB
     if (ErrorLevel != 0)
         return false
 
-    ; Confirm it's a real circle (not stray white pixel)
-    if (!ConfirmCircle(cx, cy))
+    if (!ConfirmWhiteBlob(cx, cy))
         return false
 
-    ; Measure gap in 4 directions, take smallest
     gapR := MeasureGapDir(cx, cy, 1, 0)
     gapL := MeasureGapDir(cx, cy, -1, 0)
     gapD := MeasureGapDir(cx, cy, 0, 1)
@@ -405,12 +485,10 @@ TryRingTiming() {
     return false
 }
 
-; ==========================
-;  CIRCLE CONFIRMATION
-; ==========================
-ConfirmCircle(cx, cy) {
-    offsets := [{x: 4, y: 0}, {x: -4, y: 0}, {x: 0, y: 4}, {x: 0, y: -4}]
-    brightCount := 0
+; Confirm white blob (not stray white pixel from UI text etc.)
+ConfirmWhiteBlob(cx, cy) {
+    offsets := [{x: 5, y: 0}, {x: -5, y: 0}, {x: 0, y: 5}, {x: 0, y: -5}]
+    bright := 0
     for i, o in offsets {
         px := cx + o.x
         py := cy + o.y
@@ -418,9 +496,9 @@ ConfirmCircle(cx, cy) {
             continue
         PixelGetColor, col, px, py, RGB
         if (IsBright(col, 150))
-            brightCount++
+            bright++
     }
-    return (brightCount >= 3)
+    return (bright >= 3)
 }
 
 ; ==========================
@@ -430,7 +508,6 @@ MeasureGapDir(cx, cy, dx, dy) {
     x := cx
     y := cy
 
-    ; Skip through white inner circle
     Loop, 120 {
         x += dx
         y += dy
@@ -441,7 +518,6 @@ MeasureGapDir(cx, cy, dx, dy) {
             break
     }
 
-    ; Count background pixels until dark ring
     gapPx := 0
     Loop, 150 {
         x += dx
