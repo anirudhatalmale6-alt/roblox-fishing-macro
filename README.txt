@@ -1,164 +1,151 @@
 ==============================================================
-  ROBLOX FISHING MINIGAME MACRO — Setup & Customization Guide
+  ROBLOX FISHING MINIGAME MACRO v2.0 — AUTO-DETECT
 ==============================================================
 
-WHAT THIS DOES
---------------
-A client-side AutoHotkey macro that automates the fishing
-minigame by detecting circles on screen and clicking them
-with human-like timing.  Supports all 3 minigame variants
-and all 4 difficulty levels.
+WHAT'S NEW IN v2
+----------------
+- Fully automatic variant detection — no need to press F2/F3!
+- The script figures out which minigame variant is active and
+  handles it automatically, including all 4 difficulties.
 
-No exploits, no memory editing, no injection — only simulated
-mouse clicks, exactly like a human player would do.
+
+HOW IT WORKS
+------------
+Every scan cycle (~100 times/sec) the macro runs two strategies:
+
+  Strategy A (Variant 1 — multi-circle, blue UI):
+    Scans for brightly colored circles (yellow, green, orange).
+    If found → clicks immediately.
+
+  Strategy B (Variants 2 & 3 — ring timing, purple UI):
+    Scans for a white/gray inner circle.  Measures the pixel
+    gap between the inner circle and the shrinking dark ring.
+    When the ring is close enough → clicks.
+
+Whichever strategy finds a target first wins.  No manual
+switching needed — it handles all 3 variants and all 4
+difficulty levels automatically.
 
 
 REQUIREMENTS
 ------------
-1. AutoHotkey v1.1+  (free, download from https://www.autohotkey.com)
-   - During install, pick "AutoHotkey v1.1" (not v2).
+1. AutoHotkey v1.1+  (free: https://www.autohotkey.com)
+   During install, pick "AutoHotkey v1.1" (not v2).
 2. Windows 10 or 11.
-3. Roblox running in WINDOWED or BORDERLESS-WINDOWED mode
-   (full-screen exclusive may block AHK pixel reads).
+3. Roblox in WINDOWED or BORDERLESS-WINDOWED mode
+   (full-screen exclusive may block pixel detection).
 
 
 QUICK START
 -----------
-1. Install AutoHotkey v1.1 if you haven't already.
-2. Double-click  FishingMacro.ahk  — a tooltip appears in the
-   top-left showing current settings.
-3. Open Roblox and load into the fishing game.
+1. Install AutoHotkey v1.1.
+2. Double-click  FishingMacro.ahk  — tooltip appears.
+3. Open Roblox, load into the fishing game.
 4. Press F4 to calibrate the game area:
-     - Click the TOP-LEFT corner of the minigame UI
-     - Click the BOTTOM-RIGHT corner of the minigame UI
-   This tells the macro where to look for circles.
-5. Press F2 to select the right variant (1, 2, or 3).
-6. Press F3 to select the right difficulty.
-7. Equip the Super Rod, press F5 to cast.
-8. Press F1 to start the macro — it will detect and click
-   circles automatically until you press F1 again to stop.
+     - Click the TOP-LEFT corner of the minigame UI.
+     - Click the BOTTOM-RIGHT corner of the minigame UI.
+5. Equip the Super Rod, press F5 to cast.
+6. Press F1 to start the macro.
+7. The macro detects and clicks circles automatically.
+8. Press F1 again to stop.
 
 
 HOTKEY REFERENCE
 ----------------
   F1   Toggle macro ON / OFF
-  F2   Cycle variant:  1 → 2 → 3 → 1
-  F3   Cycle difficulty:  Easy → Medium → Hard → Impossible
   F4   Calibrate game area (click two corners)
   F5   Cast rod (single left-click)
-  F6   Color picker — hover over any pixel and press F6 to
-       see its exact color value (useful for tuning)
-  F12  Emergency exit — kills the script immediately
+  F6   Color picker (hover over any pixel, press F6 for value)
+  F7   Decrease gap threshold (more precise ring timing)
+  F8   Increase gap threshold (more forgiving ring timing)
+  F12  Emergency exit — kills script immediately
 
 
-VARIANT DETAILS
----------------
-Variant 1 — Multi-Circle (blue UI)
-  Multiple colored circles (yellow, green, orange) appear at
-  random positions.  The macro scans the game area for these
-  colors and clicks them as fast as possible.  Aim: 10/10.
+TUNING THE GAP THRESHOLD
+-------------------------
+The "gap threshold" controls when the macro clicks during the
+ring-shrinking minigames (Variants 2 & 3).
 
-Variant 2 — Single Circle, Random Position (purple UI)
-  One circle at a time appears at a random spot.  An outer
-  ring shrinks toward the white inner circle.  The macro
-  detects the gap between the inner circle and the ring,
-  and clicks when the ring is close enough.
+  Default: 7 pixels
 
-Variant 3 — Single Circle, Fixed Center (purple UI)
-  Same as Variant 2, but the circle always appears at the
-  center of the UI — slightly easier for the macro since
-  it knows exactly where to look.
+  F7 = decrease (click LATER — more precise, riskier)
+  F8 = increase (click EARLIER — safer, less precise)
+
+How to tune:
+  1. Start a round with F1.
+  2. Watch whether the macro clicks too early or too late.
+  3. Adjust with F7/F8 while playing.
+  4. Once you find the sweet spot, edit GapThresh in the
+     script to save it permanently.
 
 
 CUSTOMIZATION
 -------------
+Open FishingMacro.ahk in any text editor (Notepad works).
 
->> Changing hotkeys:
-   Open FishingMacro.ahk in a text editor.  Find lines like:
-       F1::
-   Change "F1" to your preferred key (e.g., "^F1" for Ctrl+F1,
-   "!F1" for Alt+F1, "Numpad1" for numpad key 1).
-   Save the file and reload (right-click tray icon → Reload).
+>> Circle colors (Strategy A):
+   If circles aren't being detected, use F6 to check actual
+   colors on YOUR screen.  Update V1_Yellow, V1_Green,
+   V1_Orange values.  Increase *Var values (e.g., 55 → 70)
+   for more tolerance.
 
->> Adjusting circle detection colors (Variant 1):
-   If circles aren't being detected, use F6 to check what
-   color the circles actually are on YOUR screen, then update
-   V1_Yellow, V1_Green, V1_Orange values near the top of the
-   script.  Increase the *Var values (e.g., from 55 to 70)
-   to allow more color tolerance.
+>> White circle detection (Strategy B):
+   Adjust V23_White and V23_WhiteVar if the inner circle isn't
+   being found.
 
->> Adjusting ring timing (Variants 2 & 3):
-   The key setting is  GapThreshold  — an array of 4 values
-   for [Easy, Medium, Hard, Impossible].
+>> Ring darkness:
+   RingMinBrightness (default 80) controls what counts as "dark
+   ring".  Lower = stricter.  Raise if ring isn't being detected.
 
-   Current defaults:  [12, 8, 5, 3]
+>> Humanization:
+   HumanDelayMin/Max — random delay before each click (15-55ms).
+   ClickJitter — random pixel offset (4px).
+   PostClickPause — cooldown after click (170ms).
 
-   - HIGHER number = clicks earlier (less precise, safer)
-   - LOWER number  = clicks later  (more precise, riskier)
-
-   If the macro clicks too early, decrease the value.
-   If it clicks too late (misses), increase the value.
-
->> Adjusting humanization:
-   HumanDelayMin / HumanDelayMax — random delay (ms) before
-   each click.  Default: 15-55ms.
-
-   ClickJitter — random pixel offset so clicks aren't always
-   at the exact same spot.  Default: 4 pixels.
-
-   PostClickPause — cooldown after each click to prevent
-   double-clicking the same circle.  Default: 180ms.
-   Decrease if circles appear faster than this.
-
->> Ring detection sensitivity:
-   RingMinBrightness controls what counts as "dark ring".
-   Default: 80.  If the macro mistakes background for ring,
-   lower this value.  If it can't find the ring, raise it.
+>> Hotkeys:
+   Change "F1::" to any key.  Examples:
+     ^F1::   = Ctrl+F1
+     !F1::   = Alt+F1
+     Numpad1:: = numpad 1
 
 
 TROUBLESHOOTING
 ---------------
-Problem: Macro doesn't detect any circles.
-  → Recalibrate with F4.  Make sure the area covers the full
-    minigame UI but not the Roblox taskbar or menus.
-  → Use F6 to check actual circle colors and update settings.
-  → Try increasing color variation values (*Var settings).
-  → Make sure Roblox is in windowed mode, not fullscreen.
+Problem: Nothing happens when macro is ON.
+  → Recalibrate with F4.  Make sure area covers ONLY the
+    minigame UI, not menus or toolbar.
+  → Use F6 to verify circle colors match the script settings.
+  → Try increasing *Var color tolerance values.
 
-Problem: Clicks happen but don't register in game.
-  → Run FishingMacro.ahk as Administrator (right-click →
-    Run as administrator).  Roblox may block normal-privilege
-    input injection.
-  → Try switching SendMode from "Input" to "Event" in the
-    script (change the line near the top).
+Problem: Clicks happen but game doesn't register them.
+  → Right-click FishingMacro.ahk → Run as administrator.
+  → Roblox sometimes blocks non-elevated input.
 
-Problem: Variant 2/3 clicks too early or too late.
-  → Adjust the GapThreshold values.  Use small increments
-    (change by 1-2 at a time).
-  → Lower PostClickPause if circles come faster than 180ms.
+Problem: Macro clicks too early on ring minigames.
+  → Press F7 a few times to decrease gap threshold.
 
-Problem: Macro detects background as a circle.
-  → Increase the brightness threshold in IsBright() function
-    (change 170 to 200).
-  → Narrow the game area with F4 to exclude non-game pixels.
+Problem: Macro misses the ring (clicks too late).
+  → Press F8 a few times to increase gap threshold.
 
-Problem: Script won't start / AHK error.
-  → Make sure you have AutoHotkey v1.1 installed (not v2).
-  → Right-click the .ahk file → Open With → AutoHotkey.
+Problem: Macro clicks on background/non-circle pixels.
+  → Tighten the game area with F4.
+  → Lower color *Var values for tighter matching.
+  → Increase RingMinBrightness if it mistakes BG for ring.
+
+Problem: AHK error on launch.
+  → Make sure you have AutoHotkey v1.1, not v2.
 
 
 NOTES
 -----
-- The macro only sends standard mouse clicks — the same input
-  Windows generates when you physically click your mouse.
-- All timing includes small random variations to appear natural.
-- The script does NOT read game memory, inject code, or modify
-  any Roblox files.
-- Press F12 at any time to immediately kill the macro.
-- If the game updates and changes circle colors or UI layout,
-  use F6 to get the new colors and update the script settings.
+- Only sends standard mouse clicks — same as physical mouse.
+- Random timing + position jitter for human-like behavior.
+- Does NOT read game memory, inject code, or modify files.
+- The tooltip shows which detection mode is active (multi-
+  circle or ring-timing) so you can verify it's working.
+- If the game updates circle colors, use F6 to get new values.
 
 
 ==============================================================
-  Version 1.0 — Built for the Roblox fishing rod minigame
+  v2.0 — Auto-detect variant & difficulty
 ==============================================================

@@ -1,22 +1,35 @@
 ; ============================================================
-;  ROBLOX FISHING MINIGAME MACRO  v1.0
+;  ROBLOX FISHING MINIGAME MACRO  v2.0  —  AUTO-DETECT
 ; ============================================================
-;  A client-side AHK helper that mimics normal player inputs.
-;  No exploits, memory edits, or injection — only mouse clicks.
+;
+;  Automatically detects which variant is active and handles
+;  all 4 difficulty levels with no manual switching.
+;
+;  HOW IT WORKS:
+;    Every scan cycle the macro tries TWO detection strategies:
+;
+;    Strategy A — "Multi-circle" (Variant 1):
+;      Scan for brightly colored circles (yellow/green/orange).
+;      If any are found → click immediately.
+;
+;    Strategy B — "Ring-timing" (Variants 2 & 3):
+;      Scan for a white/gray inner circle anywhere in the game
+;      area.  Measure the pixel-gap between the inner circle
+;      edge and the dark shrinking ring.  Click when the gap
+;      is small enough.
+;
+;    Whichever strategy finds a target first, it acts.
+;    Works for ALL variants and ALL difficulties automatically.
 ;
 ;  HOTKEYS:
 ;    F1  = Toggle macro ON / OFF
-;    F2  = Cycle variant  (1 → 2 → 3 → 1)
-;    F3  = Cycle difficulty (Easy → Med → Hard → Impossible)
 ;    F4  = Calibrate game area (click two corners)
-;    F5  = Cast rod (left-click once)
-;    F6  = Color picker — shows color under cursor
+;    F5  = Cast rod (single left-click)
+;    F6  = Color picker (hover + press to see pixel color)
+;    F7  = Decrease gap threshold (more precise, clicks later)
+;    F8  = Increase gap threshold (more forgiving, clicks earlier)
 ;    F12 = Emergency exit
 ;
-;  VARIANTS:
-;    1 = Multi-circle (blue UI) — click every circle ASAP
-;    2 = Single circle, random pos (purple UI) — time the ring
-;    3 = Single circle, fixed center (purple UI) — time the ring
 ; ============================================================
 
 #Requires AutoHotkey v1.1
@@ -32,21 +45,19 @@ SendMode Input
 ;  USER-EDITABLE SETTINGS
 ; ==========================
 
-; --- Current mode ---
-global Running   := false
-global Variant   := 1          ; 1, 2, or 3
-global Difficulty := 2         ; 1=Easy 2=Medium 3=Hard 4=Impossible
+global Running := false
 
-; --- Game area (screen coords) ---
-; Default for 1920x1080 — recalibrate with F4 for your setup.
+; --- Game area (screen coordinates) ---
+; Recalibrate with F4 for your screen resolution.
+; Should cover the minigame UI only (not Roblox menus/toolbar).
 global GX1 := 110
 global GY1 := 30
 global GX2 := 1810
 global GY2 := 640
 
-; --- Variant 1: circle colors to hunt ---
-; These are approximate RGB values for the colored inner circles.
-; Increase *Var values if circles aren't being detected.
+; --- STRATEGY A: colored circle colors (Variant 1) ---
+; The bright circles that appear on the blue/cyan water.
+; Use F6 to check actual colors on your screen, then adjust.
 global V1_Yellow    := 0xE8E800
 global V1_YellowVar := 55
 global V1_Green     := 0x30D830
@@ -54,43 +65,46 @@ global V1_GreenVar  := 55
 global V1_Orange    := 0xE89830
 global V1_OrangeVar := 55
 
-; --- Variants 2 & 3: white inner circle ---
+; --- STRATEGY B: white inner circle (Variants 2 & 3) ---
 global V23_White    := 0xD8D8D8
 global V23_WhiteVar := 45
 
-; --- Ring detection ---
-; "GapThreshold" = max pixels of background between inner circle
-; edge and the ring outline before we consider it "close enough".
-; Lower = more precise timing, higher = clicks earlier.
-; Tune per difficulty:  Easy needs less precision, Impossible needs more.
-global GapThreshold := [12, 8, 5, 3]   ; Easy, Med, Hard, Impossible
+; --- Gap threshold (ring timing) ---
+; How close the ring must be before we click (in pixels).
+; LOWER = more precise timing (better score, but riskier).
+; HIGHER = clicks earlier (safer, may lose some precision).
+; Default 7 works well across Easy → Impossible.
+; Fine-tune with F7 (decrease) / F8 (increase) while playing.
+global GapThresh := 7
 
-; Ring outline darkness — the outer ring is near-black.
-global RingMinBrightness := 80   ; 0-255; a pixel is "ring" if R,G,B < this
+; --- Ring outline detection ---
+; The shrinking ring is near-black.  A pixel is considered
+; "ring" if its R, G, AND B channels are all below this value.
+global RingMinBrightness := 80
 
 ; --- Humanization ---
-; Small random variations so inputs look natural.
-global HumanDelayMin   := 15    ; ms before click
+global HumanDelayMin   := 15    ; ms random delay before click
 global HumanDelayMax   := 55
-global ClickJitter     := 4     ; random pixel offset on clicks
-global PostClickPause  := 180   ; ms cooldown after a click (avoid doubles)
+global ClickJitter     := 4     ; random pixel offset
+global PostClickPause  := 170   ; ms cooldown after a click
 
 ; ==========================
 ;  INTERNAL STATE
 ; ==========================
-global DiffNames := ["Easy", "Medium", "Hard", "Impossible"]
 global LastClickTick := 0
+global DetectedMode  := ""      ; "multi" or "ring" — display only
 
 ; ==========================
 ;  STATUS TOOLTIP
 ; ==========================
 ShowStatus() {
-    dn := DiffNames[Difficulty]
     st := Running ? "ON" : "OFF"
-    ToolTip, % "Fishing Macro [" st "]`n"
-        . "Variant: " Variant "  |  " dn "`n"
+    dm := (DetectedMode = "") ? "waiting" : DetectedMode
+    ToolTip, % "Fishing Macro [" st "] — Auto-Detect`n"
+        . "Mode: " dm "  |  Gap: " GapThresh "px`n"
         . "Area: (" GX1 "," GY1 ")-(" GX2 "," GY2 ")`n"
-        . "F1=Toggle F2=Var F3=Diff F4=Cal F5=Cast F6=Color"
+        . "F1=Toggle  F4=Calibrate  F5=Cast`n"
+        . "F7=Gap-  F8=Gap+  F6=Color  F12=Exit"
     SetTimer, HideTip, -4000
 }
 HideTip:
@@ -101,10 +115,10 @@ return
 ;  HOTKEYS
 ; ==========================
 
-; --- F1: Toggle macro ---
 F1::
     Running := !Running
     if (Running) {
+        DetectedMode := ""
         ShowStatus()
         SetTimer, MainLoop, 10
     } else {
@@ -113,19 +127,6 @@ F1::
     }
 return
 
-; --- F2: Cycle variant ---
-F2::
-    Variant := Mod(Variant, 3) + 1
-    ShowStatus()
-return
-
-; --- F3: Cycle difficulty ---
-F3::
-    Difficulty := Mod(Difficulty, 4) + 1
-    ShowStatus()
-return
-
-; --- F4: Calibrate game area ---
 F4::
     Running := false
     SetTimer, MainLoop, Off
@@ -141,13 +142,11 @@ F4::
     ShowStatus()
 return
 
-; --- F5: Cast rod ---
 F5::
     Click
     Sleep, 500
 return
 
-; --- F6: Color picker ---
 F6::
     MouseGetPos, mx, my
     PixelGetColor, col, mx, my, RGB
@@ -159,135 +158,172 @@ F6::
     SetTimer, HideTip, -5000
 return
 
-; --- F12: Emergency exit ---
+F7::
+    GapThresh := Max(1, GapThresh - 1)
+    ToolTip, % "Gap threshold: " GapThresh "px  (more precise)"
+    SetTimer, HideTip, -2000
+return
+
+F8::
+    GapThresh := Min(25, GapThresh + 1)
+    ToolTip, % "Gap threshold: " GapThresh "px  (more forgiving)"
+    SetTimer, HideTip, -2000
+return
+
 F12::
     ExitApp
 return
 
 ; ==========================
-;  MAIN LOOP (runs on timer)
+;  MAIN LOOP
 ; ==========================
+; Runs every ~10ms.  Tries Strategy A first (colored circles),
+; then falls back to Strategy B (white circle + ring timing).
+; This way it auto-handles whichever variant the game throws.
 MainLoop:
     if (!Running)
         return
 
-    ; Cooldown guard — skip if we just clicked
+    ; Cooldown guard
     elapsed := A_TickCount - LastClickTick
     if (elapsed < PostClickPause)
         return
 
-    if (Variant = 1)
-        V1_MultiCircle()
-    else if (Variant = 2)
-        V2_SingleRandom()
-    else
-        V3_SingleCenter()
+    ; --------------------------------------------------
+    ; STRATEGY A — Multi-circle (Variant 1)
+    ; Look for brightly colored circles and click them.
+    ; --------------------------------------------------
+    if (TryColoredCircle(V1_Yellow, V1_YellowVar))
+        return
+    if (TryColoredCircle(V1_Green, V1_GreenVar))
+        return
+    if (TryColoredCircle(V1_Orange, V1_OrangeVar))
+        return
+
+    ; --------------------------------------------------
+    ; STRATEGY B — Ring-timing (Variants 2 & 3)
+    ; Find white inner circle, measure gap to ring, click
+    ; when the ring is close enough.
+    ; --------------------------------------------------
+    TryRingTiming()
 return
 
 ; ==========================
-;  VARIANT 1 — Multi-circle
+;  STRATEGY A — Find colored circle & click
 ; ==========================
-; Scan the game area for brightly colored circles and click them.
-; Searches yellow first (most common), then green, then orange.
-V1_MultiCircle() {
-    ; Yellow
-    PixelSearch, fx, fy, GX1, GY1, GX2, GY2, V1_Yellow, V1_YellowVar, Fast RGB
-    if (ErrorLevel = 0) {
-        HumanClick(fx, fy)
-        return
-    }
-    ; Green
-    PixelSearch, fx, fy, GX1, GY1, GX2, GY2, V1_Green, V1_GreenVar, Fast RGB
-    if (ErrorLevel = 0) {
-        HumanClick(fx, fy)
-        return
-    }
-    ; Orange
-    PixelSearch, fx, fy, GX1, GY1, GX2, GY2, V1_Orange, V1_OrangeVar, Fast RGB
-    if (ErrorLevel = 0) {
-        HumanClick(fx, fy)
-        return
-    }
+TryColoredCircle(color, variation) {
+    PixelSearch, fx, fy, GX1, GY1, GX2, GY2, color, variation, Fast RGB
+    if (ErrorLevel != 0)
+        return false
+
+    DetectedMode := "multi-circle"
+    HumanClick(fx, fy)
+    return true
 }
 
 ; ==========================
-;  VARIANT 2 — Single circle, random position
+;  STRATEGY B — White circle + ring gap
 ; ==========================
-; Find the white inner circle, scan outward to measure gap to ring.
-; Click when gap is small enough (ring is close).
-V2_SingleRandom() {
-    ; Find white inner circle
+TryRingTiming() {
+    ; Find white inner circle anywhere in game area
     PixelSearch, cx, cy, GX1, GY1, GX2, GY2, V23_White, V23_WhiteVar, Fast RGB
     if (ErrorLevel != 0)
-        return   ; No circle visible yet
+        return   ; No white circle visible
 
-    ; Measure gap: walk rightward from center past white area, count
-    ; background pixels until we hit the dark ring outline.
-    gap := MeasureGap(cx, cy)
-    if (gap >= 0 && gap <= GapThreshold[Difficulty]) {
+    ; Verify it's a real circle by checking a few nearby pixels
+    ; are also bright (not a single stray white pixel).
+    if (!ConfirmCircle(cx, cy))
+        return
+
+    ; Measure gap from inner circle edge to the dark ring.
+    ; We scan in multiple directions and take the smallest gap
+    ; for more reliable detection.
+    gapR := MeasureGapDir(cx, cy, 1, 0)    ; right
+    gapL := MeasureGapDir(cx, cy, -1, 0)   ; left
+    gapD := MeasureGapDir(cx, cy, 0, 1)    ; down
+    gapU := MeasureGapDir(cx, cy, 0, -1)   ; up
+
+    ; Find the smallest valid gap from any direction
+    bestGap := 9999
+    if (gapR >= 0 && gapR < bestGap)
+        bestGap := gapR
+    if (gapL >= 0 && gapL < bestGap)
+        bestGap := gapL
+    if (gapD >= 0 && gapD < bestGap)
+        bestGap := gapD
+    if (gapU >= 0 && gapU < bestGap)
+        bestGap := gapU
+
+    ; Click if the ring is close enough
+    if (bestGap <= GapThresh) {
+        DetectedMode := "ring-timing"
         HumanClick(cx, cy)
     }
 }
 
 ; ==========================
-;  VARIANT 3 — Single circle, fixed center
+;  CIRCLE CONFIRMATION
 ; ==========================
-; The circle always appears at the center of the game UI.
-V3_SingleCenter() {
-    cx := (GX1 + GX2) // 2
-    cy := (GY1 + GY2) // 2
-
-    ; Verify white circle is present at center
-    PixelGetColor, col, cx, cy, RGB
-    if (!IsBright(col, 170))
-        return   ; No circle at center
-
-    gap := MeasureGap(cx, cy)
-    if (gap >= 0 && gap <= GapThreshold[Difficulty]) {
-        HumanClick(cx, cy)
+; Make sure the found white pixel is part of an actual circle,
+; not a stray bright pixel from the UI or background.
+; Checks that a small area around the pixel is also bright.
+ConfirmCircle(cx, cy) {
+    offsets := [{x: 3, y: 0}, {x: -3, y: 0}, {x: 0, y: 3}, {x: 0, y: -3}]
+    brightCount := 0
+    for i, o in offsets {
+        px := cx + o.x
+        py := cy + o.y
+        if (px < GX1 || px > GX2 || py < GY1 || py > GY2)
+            continue
+        PixelGetColor, col, px, py, RGB
+        if (IsBright(col, 150))
+            brightCount++
     }
+    return (brightCount >= 3)  ; At least 3 of 4 neighbors are bright
 }
 
 ; ==========================
-;  GAP MEASUREMENT
+;  GAP MEASUREMENT (directional)
 ; ==========================
-; From the detected circle center, walk RIGHT until we leave the
-; white inner circle, then count background pixels until we hit
-; the dark ring outline.  Returns gap size (pixels), or -1 if
-; no ring found within 200 px.
-MeasureGap(cx, cy) {
+; Walk from (cx,cy) in direction (dx,dy).
+; Step 1: skip through bright (white) inner circle pixels.
+; Step 2: count non-bright, non-dark pixels (the gap/background).
+; Step 3: when we hit a dark pixel (ring), return the gap size.
+; Returns -1 if no ring found within range.
+MeasureGapDir(cx, cy, dx, dy) {
     x := cx
+    y := cy
 
-    ; Step 1 — skip through white inner circle
-    Loop, 150 {
-        x++
-        if (x >= GX2)
+    ; Step 1 — walk through the white inner circle
+    Loop, 120 {
+        x += dx
+        y += dy
+        if (x < GX1 || x > GX2 || y < GY1 || y > GY2)
             return -1
-        PixelGetColor, col, x, cy, RGB
-        if (!IsBright(col, 150))
-            break   ; Left the white area
+        PixelGetColor, col, x, y, RGB
+        if (!IsBright(col, 140))
+            break
     }
 
     ; Step 2 — count background pixels until dark ring
     gapPx := 0
-    Loop, 200 {
-        x++
-        if (x >= GX2)
+    Loop, 150 {
+        x += dx
+        y += dy
+        if (x < GX1 || x > GX2 || y < GY1 || y > GY2)
             return -1
-        PixelGetColor, col, x, cy, RGB
-        if (IsDarkRing(col)) {
-            return gapPx   ; Found the ring
-        }
+        PixelGetColor, col, x, y, RGB
+        if (IsDarkRing(col))
+            return gapPx   ; Ring found
         gapPx++
     }
-    return -1   ; Ring not found
+    return -1
 }
 
 ; ==========================
 ;  HELPER FUNCTIONS
 ; ==========================
 
-; Click with small human-like jitter and delay.
 HumanClick(x, y) {
     Random, ox, -ClickJitter, ClickJitter
     Random, oy, -ClickJitter, ClickJitter
@@ -297,8 +333,6 @@ HumanClick(x, y) {
     LastClickTick := A_TickCount
 }
 
-; Is this pixel "bright" (i.e. part of the white inner circle)?
-; threshold: each R,G,B channel must be above this value.
 IsBright(color, threshold) {
     r := (color >> 16) & 0xFF
     g := (color >> 8)  & 0xFF
@@ -306,7 +340,6 @@ IsBright(color, threshold) {
     return (r > threshold && g > threshold && b > threshold)
 }
 
-; Is this pixel dark enough to be the ring outline?
 IsDarkRing(color) {
     r := (color >> 16) & 0xFF
     g := (color >> 8)  & 0xFF
