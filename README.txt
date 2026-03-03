@@ -1,151 +1,116 @@
 ==============================================================
-  ROBLOX FISHING MINIGAME MACRO v2.0 — AUTO-DETECT
+  ROBLOX FISHING MINIGAME MACRO v3.0 — FULLY AUTOMATIC
 ==============================================================
 
-WHAT'S NEW IN v2
-----------------
-- Fully automatic variant detection — no need to press F2/F3!
-- The script figures out which minigame variant is active and
-  handles it automatically, including all 4 difficulties.
+Press F1 and walk away.  The macro handles everything:
+casting, playing the minigame, and recasting in a loop.
 
 
 HOW IT WORKS
 ------------
-Every scan cycle (~100 times/sec) the macro runs two strategies:
+The macro runs a 4-state loop:
 
-  Strategy A (Variant 1 — multi-circle, blue UI):
-    Scans for brightly colored circles (yellow, green, orange).
-    If found → clicks immediately.
+  CASTING   → Left-clicks to cast the rod
+  WAITING   → Scans for circles (minigame starting)
+  PLAYING   → Detects and clicks circles automatically
+  COOLDOWN  → Round ended, brief pause, then recasts
 
-  Strategy B (Variants 2 & 3 — ring timing, purple UI):
-    Scans for a white/gray inner circle.  Measures the pixel
-    gap between the inner circle and the shrinking dark ring.
-    When the ring is close enough → clicks.
+Circle detection uses 3 layered strategies:
 
-Whichever strategy finds a target first wins.  No manual
-switching needed — it handles all 3 variants and all 4
-difficulty levels automatically.
+  1. Known-color search:  Scans for 9 pre-defined circle
+     colors (yellow, green, orange, pink, purple, red,
+     light blue, deep blue, cyan).
+
+  2. Saturation scan (fallback):  Grid-scans for ANY vivid
+     pixel that stands out from the water background.
+     Catches circle colors not in the pre-defined list.
+
+  3. Ring-timing (Variants 2 & 3):  Finds the white inner
+     circle, measures gap to the shrinking ring, clicks
+     when the ring is close enough.
 
 
 REQUIREMENTS
 ------------
 1. AutoHotkey v1.1+  (free: https://www.autohotkey.com)
-   During install, pick "AutoHotkey v1.1" (not v2).
-2. Windows 10 or 11.
+2. Windows 10 or 11
 3. Roblox in WINDOWED or BORDERLESS-WINDOWED mode
-   (full-screen exclusive may block pixel detection).
 
 
 QUICK START
 -----------
-1. Install AutoHotkey v1.1.
-2. Double-click  FishingMacro.ahk  — tooltip appears.
-3. Open Roblox, load into the fishing game.
-4. Press F4 to calibrate the game area:
-     - Click the TOP-LEFT corner of the minigame UI.
-     - Click the BOTTOM-RIGHT corner of the minigame UI.
-5. Equip the Super Rod, press F5 to cast.
-6. Press F1 to start the macro.
-7. The macro detects and clicks circles automatically.
-8. Press F1 again to stop.
+1. Install AutoHotkey v1.1
+2. Double-click FishingMacro.ahk
+3. Open Roblox, go to the fishing spot
+4. Press F4 to calibrate:
+     - Click TOP-LEFT of the minigame area
+     - Click BOTTOM-RIGHT of the minigame area
+5. Equip the Super Rod
+6. Press F1 — the macro starts casting and playing!
+7. Press F1 again to stop
 
 
-HOTKEY REFERENCE
-----------------
-  F1   Toggle macro ON / OFF
+HOTKEYS
+-------
+  F1   Start / Stop the full-auto loop
   F4   Calibrate game area (click two corners)
-  F5   Cast rod (single left-click)
-  F6   Color picker (hover over any pixel, press F6 for value)
+  F6   Color picker (hover + press to see pixel info)
   F7   Decrease gap threshold (more precise ring timing)
   F8   Increase gap threshold (more forgiving ring timing)
-  F12  Emergency exit — kills script immediately
+  F12  Emergency exit
 
 
-TUNING THE GAP THRESHOLD
--------------------------
-The "gap threshold" controls when the macro clicks during the
-ring-shrinking minigames (Variants 2 & 3).
+TUNING
+------
+>> Gap threshold (Variants 2 & 3 ring timing):
+   Default: 7px.  Adjust live with F7 (tighter) / F8 (looser).
+   If clicks are too early → F7.  Too late → F8.
 
-  Default: 7 pixels
+>> Circle colors:
+   If a new color appears that isn't detected, use F6 to
+   check its value, then add it to CircleColors in the script.
 
-  F7 = decrease (click LATER — more precise, riskier)
-  F8 = increase (click EARLIER — safer, less precise)
+>> Saturation scan:
+   MinSaturation (default 90) — lower to catch less vivid circles.
+   WaterBlueMargin (default 50) — raise if water is getting
+   false-detected; lower if blue circles aren't being found.
 
-How to tune:
-  1. Start a round with F1.
-  2. Watch whether the macro clicks too early or too late.
-  3. Adjust with F7/F8 while playing.
-  4. Once you find the sweet spot, edit GapThresh in the
-     script to save it permanently.
-
-
-CUSTOMIZATION
--------------
-Open FishingMacro.ahk in any text editor (Notepad works).
-
->> Circle colors (Strategy A):
-   If circles aren't being detected, use F6 to check actual
-   colors on YOUR screen.  Update V1_Yellow, V1_Green,
-   V1_Orange values.  Increase *Var values (e.g., 55 → 70)
-   for more tolerance.
-
->> White circle detection (Strategy B):
-   Adjust V23_White and V23_WhiteVar if the inner circle isn't
-   being found.
-
->> Ring darkness:
-   RingMinBrightness (default 80) controls what counts as "dark
-   ring".  Lower = stricter.  Raise if ring isn't being detected.
+>> Automation timing:
+   CastClickDelay (300ms) — time for the cast click
+   WaitForGameMax (8000ms) — how long to wait for minigame
+   RoundEndTimeout (2500ms) — no circles for this long = round over
+   RecastDelay (1500ms) — pause between rounds
 
 >> Humanization:
-   HumanDelayMin/Max — random delay before each click (15-55ms).
-   ClickJitter — random pixel offset (4px).
-   PostClickPause — cooldown after click (170ms).
-
->> Hotkeys:
-   Change "F1::" to any key.  Examples:
-     ^F1::   = Ctrl+F1
-     !F1::   = Alt+F1
-     Numpad1:: = numpad 1
+   HumanDelayMin/Max (15-55ms) — random click delay
+   ClickJitter (4px) — random position offset
+   PostClickPause (170ms) — cooldown between clicks
 
 
 TROUBLESHOOTING
 ---------------
-Problem: Nothing happens when macro is ON.
-  → Recalibrate with F4.  Make sure area covers ONLY the
-    minigame UI, not menus or toolbar.
-  → Use F6 to verify circle colors match the script settings.
-  → Try increasing *Var color tolerance values.
+Problem: Macro casts but never starts playing.
+  → Recalibrate with F4.  Area must cover the minigame UI.
+  → Circle colors might not match — use F6 to check and
+    add new colors to CircleColors array.
+  → Try lowering MinSaturation (e.g., 90 → 60).
 
-Problem: Clicks happen but game doesn't register them.
-  → Right-click FishingMacro.ahk → Run as administrator.
-  → Roblox sometimes blocks non-elevated input.
+Problem: Macro clicks on water instead of circles.
+  → Tighten F4 calibration to just the minigame UI.
+  → Raise WaterBlueMargin (e.g., 50 → 70).
+  → Raise MinSaturation (e.g., 90 → 110).
 
-Problem: Macro clicks too early on ring minigames.
-  → Press F7 a few times to decrease gap threshold.
+Problem: Clicks don't register in game.
+  → Run as Administrator (right-click → Run as admin).
 
-Problem: Macro misses the ring (clicks too late).
-  → Press F8 a few times to increase gap threshold.
+Problem: Ring timing is off.
+  → Use F7/F8 to fine-tune while playing.
 
-Problem: Macro clicks on background/non-circle pixels.
-  → Tighten the game area with F4.
-  → Lower color *Var values for tighter matching.
-  → Increase RingMinBrightness if it mistakes BG for ring.
-
-Problem: AHK error on launch.
-  → Make sure you have AutoHotkey v1.1, not v2.
-
-
-NOTES
------
-- Only sends standard mouse clicks — same as physical mouse.
-- Random timing + position jitter for human-like behavior.
-- Does NOT read game memory, inject code, or modify files.
-- The tooltip shows which detection mode is active (multi-
-  circle or ring-timing) so you can verify it's working.
-- If the game updates circle colors, use F6 to get new values.
+Problem: Recasts too early / too late.
+  → Adjust RoundEndTimeout (raise if ending too early).
+  → Adjust RecastDelay (raise for longer pause between rounds).
 
 
 ==============================================================
-  v2.0 — Auto-detect variant & difficulty
+  v3.0 — Fully automatic: cast, detect, play, recast loop
 ==============================================================
