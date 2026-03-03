@@ -1,24 +1,25 @@
 ; ============================================================
-;  ROBLOX FISHING MINIGAME MACRO  v4.0  —  PRECISION UPDATE
+;  ROBLOX FISHING MINIGAME MACRO  v5.0  —  UI EXCLUSION FIX
 ; ============================================================
 ;
-;  CHANGES IN v4:
-;    - Auto-excludes left menu & bottom toolbar from scan area
-;    - Blob confirmation: verifies a found pixel is part of a
-;      real circle (not a UI button or stray pixel) before clicking
-;    - Casts by clicking in the game center, not at cursor
-;    - Saturation scan is smarter: excludes brown/tan UI colors
-;    - Less aggressive: won't spam-click on false positives
+;  v5 FIXES:
+;    - Brown UI buttons (R173 G140 B95) now properly excluded
+;    - White text ("Challenges" etc.) no longer triggers ring
+;      mode — white blob check now requires 20px radius
+;    - Cast position fixed to (994, 735) — configurable with F5
+;    - Wait time increased to 20 sec for bait to be ready
+;    - Added explicit warm-color (brown/tan/beige) filter
 ;
 ;  Press F1 and walk away.  The macro handles everything.
 ;
 ;  HOTKEYS:
 ;    F1  = Start / Stop
 ;    F4  = Calibrate game area (click two corners)
+;    F5  = Set cast point (click where to cast the rod)
 ;    F6  = Color picker (checks pixel under cursor)
 ;    F7  = Decrease gap threshold (ring: more precise)
 ;    F8  = Increase gap threshold (ring: more forgiving)
-;    F9  = Pause / Resume (keeps state, stops mouse movement)
+;    F9  = Pause / Resume
 ;    F12 = Emergency exit
 ;
 ; ============================================================
@@ -40,25 +41,24 @@ global Running := false
 global Paused  := false
 
 ; --- Raw game area (set with F4) ---
-; This is the FULL area including menus.  The script auto-
-; shrinks it to exclude the left menu and bottom toolbar.
 global RawX1 := 110
 global RawY1 := 30
 global RawX2 := 1810
 global RawY2 := 640
 
+; --- Cast point (set with F5) ---
+; Where the script clicks to cast the rod.
+; Default: (994, 735) as recommended.
+global CastX := 994
+global CastY := 735
+
 ; --- UI exclusion margins (pixels) ---
-; Shrink the scan area inward to skip UI elements.
-; Left margin: skips Challenges/Storage/Shop menu
-; Bottom margin: skips inventory toolbar
-; Top margin: skips difficulty text area
-; Adjust these if your UI is different.
-global MarginLeft   := 130
+global MarginLeft   := 150    ; increased to fully skip side menu
 global MarginRight  := 20
-global MarginTop    := 90
+global MarginTop    := 100    ; skip difficulty text
 global MarginBottom := 80
 
-; --- Effective scan area (computed from raw + margins) ---
+; --- Effective scan area (auto-computed) ---
 global GX1 := 0
 global GY1 := 0
 global GX2 := 0
@@ -76,23 +76,24 @@ global GapThresh := 7
 global RingMinBrightness := 80
 
 ; --- Blob confirmation ---
-; How many nearby pixels must also be colorful to confirm
-; that the found pixel is a real circle (not a stray pixel).
-; Checks 8 points around the found pixel at this distance.
-global BlobCheckDist  := 8    ; pixels from found point
-global BlobMinMatches := 4    ; out of 8 must match
+global BlobCheckDist  := 10    ; pixels from found point
+global BlobMinMatches := 4     ; out of 8 must match
 
-; --- Saturation scan (catches unlisted colors) ---
+; --- White circle size check ---
+; The real minigame circle is large (40-80px diameter).
+; UI text characters are small (~12px).  We check at 20px
+; distance to distinguish circles from text.
+global WhiteCheckDist := 20
+
+; --- Saturation scan ---
 global SatScanStep      := 22
-global MinSaturation    := 100   ; raised to reduce false hits
+global MinSaturation    := 100
 global MinBrightness    := 130
 global WaterBlueMargin  := 50
-; Also skip brown/tan pixels (UI buttons):
-global BrownMaxSat      := 70    ; low-sat warm colors = UI
 
 ; --- Automation timing ---
 global CastClickDelay   := 300
-global WaitForGameMax   := 8000
+global WaitForGameMax   := 20000   ; 20 sec — bait takes 5-15s
 global RoundEndTimeout  := 2500
 global RecastDelay      := 1500
 
@@ -100,7 +101,7 @@ global RecastDelay      := 1500
 global HumanDelayMin    := 15
 global HumanDelayMax    := 55
 global ClickJitter      := 4
-global PostClickPause   := 200   ; slightly longer to reduce spam
+global PostClickPause   := 200
 
 ; ==========================
 ;  INITIALIZE
@@ -143,9 +144,9 @@ ShowStatus() {
     st := Running ? (Paused ? "PAUSED" : "RUNNING") : "STOPPED"
     ToolTip, % "Fishing Macro [" st "]`n"
         . "State: " MacroState "  |  Mode: " DetectedMode "`n"
-        . "Gap: " GapThresh "px`n"
+        . "Gap: " GapThresh "px  |  Cast: (" CastX "," CastY ")`n"
         . "Scan: (" GX1 "," GY1 ")-(" GX2 "," GY2 ")`n"
-        . "F1=On/Off F4=Cal F7/8=Gap F9=Pause F12=Exit"
+        . "F1=On/Off F4=Area F5=Cast F7/8=Gap F9=Pause"
     SetTimer, HideTip, -4000
 }
 HideTip:
@@ -177,7 +178,7 @@ F4::
     Paused := false
     MacroState := "IDLE"
     SetTimer, AutoLoop, Off
-    ToolTip, Click the TOP-LEFT corner of the FULL game area...
+    ToolTip, Click the TOP-LEFT corner of the game area...
     KeyWait, LButton, D
     MouseGetPos, RawX1, RawY1
     KeyWait, LButton
@@ -187,9 +188,21 @@ F4::
     MouseGetPos, RawX2, RawY2
     KeyWait, LButton
     UpdateScanArea()
-    ToolTip, % "Raw area: (" RawX1 "," RawY1 ")-(" RawX2 "," RawY2 ")`n"
-        . "Scan area (after margins): (" GX1 "," GY1 ")-(" GX2 "," GY2 ")"
+    ToolTip, % "Scan area: (" GX1 "," GY1 ")-(" GX2 "," GY2 ")`n(margins auto-exclude menus)"
     SetTimer, HideTip, -5000
+return
+
+F5::
+    Running := false
+    Paused := false
+    MacroState := "IDLE"
+    SetTimer, AutoLoop, Off
+    ToolTip, Click where you want to CAST the rod...
+    KeyWait, LButton, D
+    MouseGetPos, CastX, CastY
+    KeyWait, LButton
+    ToolTip, % "Cast point set: (" CastX "," CastY ")"
+    SetTimer, HideTip, -3000
 return
 
 F6::
@@ -202,7 +215,9 @@ F6::
     maxC := Max(r, Max(g, b))
     minC := Min(r, Min(g, b))
     sat := maxC - minC
-    ToolTip, % "(" mx "," my "): " hex "`nR=" r " G=" g " B=" b " Sat=" sat
+    warm := IsWarmBrown(r, g, b)
+    wt := warm ? " [BROWN-excluded]" : ""
+    ToolTip, % "(" mx "," my "): " hex "`nR=" r " G=" g " B=" b " Sat=" sat wt
     SetTimer, HideTip, -6000
 return
 
@@ -247,24 +262,22 @@ AutoLoop:
 return
 
 ; --------------------------------------------------
-;  CASTING — click in the CENTER of the game area
+;  CASTING — click at the set cast point
 ; --------------------------------------------------
 DoCasting() {
     Random, d, 200, 500
     Sleep, d
 
-    ; Click in the center of the raw game area (where the water is)
-    castX := (RawX1 + RawX2) // 2
-    castY := (RawY1 + RawY2) // 2
-    Random, ox, -10, 10
-    Random, oy, -10, 10
-    Click, % (castX + ox) . " " . (castY + oy)
+    ; Click at the configured cast point with small jitter
+    Random, ox, -8, 8
+    Random, oy, -8, 8
+    Click, % (CastX + ox) . " " . (CastY + oy)
     Sleep, CastClickDelay
 
     MacroState := "WAITING"
     StateStartTick := A_TickCount
     DetectedMode := ""
-    ToolTip, % "Cast! Waiting for minigame..."
+    ToolTip, % "Cast! Waiting for minigame (up to 20s)..."
     SetTimer, HideTip, -3000
 }
 
@@ -325,12 +338,19 @@ DoCooldown() {
 ;  CIRCLE DETECTION ENGINE
 ; ==========================
 TryFindAndClick() {
-    ; --- Strategy A: known colors + blob confirmation ---
+    ; --- Strategy A: known colors + blob confirm ---
     for i, entry in CircleColors {
         PixelSearch, fx, fy, GX1, GY1, GX2, GY2, entry.c, entry.v, Fast RGB
         if (ErrorLevel = 0) {
-            ; CONFIRM it's a real circle, not a stray pixel or UI
-            if (ConfirmColorBlob(fx, fy, entry.c, entry.v)) {
+            ; Check it's not a brown/tan UI element
+            PixelGetColor, checkCol, fx, fy, RGB
+            cr := (checkCol >> 16) & 0xFF
+            cg := (checkCol >> 8)  & 0xFF
+            cb := checkCol & 0xFF
+            if (IsWarmBrown(cr, cg, cb))
+                continue
+
+            if (ConfirmColorBlob(fx, fy)) {
                 DetectedMode := "multi-circle"
                 HumanClick(fx, fy)
                 return true
@@ -354,12 +374,37 @@ TryFindAndClick() {
 }
 
 ; ==========================
+;  WARM BROWN / TAN FILTER
+; ==========================
+; Returns true if the color looks like a UI button (brown/tan/beige).
+; The Challenges menu buttons are around R=173 G=140 B=95.
+; This catches any warm, desaturated color in that family.
+IsWarmBrown(r, g, b) {
+    ; Must be warm: R > G > B
+    if (r <= g || g <= b)
+        return false
+    ; Must be in the right brightness range (not too dark, not too bright)
+    if (r < 100 || r > 220)
+        return false
+    ; Must be low-to-medium saturation (UI buttons, not vivid game circles)
+    sat := r - b   ; for warm colors, R-B is a good saturation proxy
+    if (sat > 120)
+        return false   ; too saturated = probably a real game circle
+    ; Check the warm ratio: R/B should be moderate (not extreme)
+    if (r > 0 && b > 0) {
+        ratio := r / b
+        if (ratio > 1.2 && ratio < 3.0 && sat < 110)
+            return true
+    }
+    return false
+}
+
+; ==========================
 ;  BLOB CONFIRMATION (Strategy A)
 ; ==========================
-; Checks 8 points around the found pixel at BlobCheckDist.
-; At least BlobMinMatches must also be colorful (high sat)
-; to confirm this is a real circle and not noise/UI.
-ConfirmColorBlob(fx, fy, targetColor, variation) {
+; Verifies the found pixel is part of a large colored area
+; (real circle), not a small UI element or stray pixel.
+ConfirmColorBlob(fx, fy) {
     d := BlobCheckDist
     offsets := [ {x: d, y: 0}, {x: -d, y: 0}, {x: 0, y: d}, {x: 0, y: -d}
                , {x: d, y: d}, {x: -d, y: -d}, {x: d, y: -d}, {x: -d, y: d} ]
@@ -374,11 +419,15 @@ ConfirmColorBlob(fx, fy, targetColor, variation) {
         r := (col >> 16) & 0xFF
         g := (col >> 8)  & 0xFF
         b := col & 0xFF
+
+        ; Skip if this neighbor is a brown UI pixel
+        if (IsWarmBrown(r, g, b))
+            continue
+
         maxC := Max(r, Max(g, b))
         minC := Min(r, Min(g, b))
         sat  := maxC - minC
-        ; Neighbor must be vivid (part of a colored circle)
-        if (sat > 60 && maxC > 100)
+        if (sat > 50 && maxC > 100)
             matches++
     }
     return (matches >= BlobMinMatches)
@@ -397,24 +446,20 @@ SaturationScan(ByRef outX, ByRef outY) {
             g := (col >> 8)  & 0xFF
             b := col & 0xFF
 
+            ; Skip warm brown / tan immediately
+            if (IsWarmBrown(r, g, b))
+                goto SatNext
+
             maxC := Max(r, Max(g, b))
             minC := Min(r, Min(g, b))
             sat  := maxC - minC
 
             if (sat > MinSaturation && maxC > MinBrightness) {
-                ; Skip water-blue (blue dominant by large margin)
+                ; Skip water-blue
                 if (b > r + WaterBlueMargin && b > g + WaterBlueMargin)
                     goto SatNext
 
-                ; Skip brown/tan (warm, low-to-medium sat = UI buttons)
-                if (r > g && r > b && sat < BrownMaxSat)
-                    goto SatNext
-
-                ; Skip gray/desaturated
-                if (sat < 50)
-                    goto SatNext
-
-                ; Confirm it's a blob, not a stray pixel
+                ; Confirm blob
                 if (ConfirmSatBlob(x, y)) {
                     outX := x
                     outY := y
@@ -429,9 +474,8 @@ SaturationScan(ByRef outX, ByRef outY) {
     return false
 }
 
-; Confirm saturation blob: check 4 neighbors are also vivid
 ConfirmSatBlob(fx, fy) {
-    d := 6
+    d := 8
     offsets := [{x: d, y: 0}, {x: -d, y: 0}, {x: 0, y: d}, {x: 0, y: -d}]
     matches := 0
     for i, o in offsets {
@@ -443,6 +487,8 @@ ConfirmSatBlob(fx, fy) {
         r := (col >> 16) & 0xFF
         g := (col >> 8)  & 0xFF
         b := col & 0xFF
+        if (IsWarmBrown(r, g, b))
+            continue
         maxC := Max(r, Max(g, b))
         minC := Min(r, Min(g, b))
         if (maxC - minC > 70)
@@ -459,7 +505,10 @@ TryRingTiming() {
     if (ErrorLevel != 0)
         return false
 
-    if (!ConfirmWhiteBlob(cx, cy))
+    ; STRICT white circle check: must be bright at 20px distance
+    ; in all directions.  Real circles are 40-80px diameter.
+    ; UI text characters are only ~12px tall, so they fail this.
+    if (!ConfirmLargeWhiteBlob(cx, cy))
         return false
 
     gapR := MeasureGapDir(cx, cy, 1, 0)
@@ -485,9 +534,13 @@ TryRingTiming() {
     return false
 }
 
-; Confirm white blob (not stray white pixel from UI text etc.)
-ConfirmWhiteBlob(cx, cy) {
-    offsets := [{x: 5, y: 0}, {x: -5, y: 0}, {x: 0, y: 5}, {x: 0, y: -5}]
+; Large white blob check — the found pixel must be surrounded
+; by bright pixels at WhiteCheckDist (20px) in all 4 directions.
+; This eliminates small UI text as false positives.
+ConfirmLargeWhiteBlob(cx, cy) {
+    d := WhiteCheckDist
+    offsets := [{x: d, y: 0}, {x: -d, y: 0}, {x: 0, y: d}, {x: 0, y: -d}
+              , {x: d, y: d}, {x: -d, y: -d}, {x: d, y: -d}, {x: -d, y: d}]
     bright := 0
     for i, o in offsets {
         px := cx + o.x
@@ -498,7 +551,8 @@ ConfirmWhiteBlob(cx, cy) {
         if (IsBright(col, 150))
             bright++
     }
-    return (bright >= 3)
+    ; At least 6 of 8 directions must be bright at 20px distance
+    return (bright >= 6)
 }
 
 ; ==========================
